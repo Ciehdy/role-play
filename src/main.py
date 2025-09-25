@@ -1,34 +1,40 @@
-import asyncio
+from fastapi import FastAPI, Request, WebSocket
+from fastapi.templating import Jinja2Templates
+from openai import AsyncOpenAI
 
+from core.config import config
 from domain.chat.session import ChatSession
-from domain.role.models import Role
+from domain.role.models import load_roles
+
+app = FastAPI()
+templates = Jinja2Templates(directory="templates")
+
+client = AsyncOpenAI(
+    base_url=config.OPENAI_BASE_URL,
+    api_key=config.OPENAI_API_KEY,
+)
+
+roles = load_roles("roles.json")
 
 
-async def main():
-    from dotenv import load_dotenv
-
-    load_dotenv()
-
-    print("Hello from role-play!")
-
-    role = Role(
-        name="萧炎",
-        description="",
-        tts_voice_type="qiniu_zh_female_tmjxxy",
-        tts_speed_ratio=1.0,
+@app.get("/")
+async def get(request: Request):
+    ws_url = "ws://localhost:8000/ws"
+    return templates.TemplateResponse(
+        "chat.html",
+        {"request": request, "ws_url": ws_url, "roles": roles},
     )
-    session = ChatSession(role=role)
-
-    print("输入消息并回车发送，输入 'exit' 退出。")
-
-    loop = asyncio.get_event_loop()
-    while True:
-        user_input = await loop.run_in_executor(None, input, "> ")
-        if user_input.strip().lower() == "exit":
-            print("退出对话。")
-            break
-        await session.send_message(user_input)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket, role: str):
+    await websocket.accept()
+
+    session = ChatSession(roles.get(role, roles["xiao_yan"]))
+
+    try:
+        while True:
+            user_msg = await websocket.receive_text()
+            await session.stream_message(user_msg, websocket)
+    except Exception:
+        await session.close()

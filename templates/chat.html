@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>AI Chat</title>
+    <style>
+      body {
+        font-family: Arial;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+        background: #f5f5f5;
+      }
+      #chat-container {
+        width: 600px;
+        height: 80vh;
+        display: flex;
+        flex-direction: column;
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+      }
+      #role-container {
+        padding: 10px;
+        border-bottom: 1px solid #ddd;
+        display: flex;
+        gap: 10px;
+      }
+      #messages {
+        flex: 1;
+        padding: 16px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .message {
+        max-width: 75%;
+        padding: 10px;
+        border-radius: 10px;
+        white-space: pre-wrap;
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+      .user {
+        align-self: flex-end;
+        background: #0078ff;
+        color: white;
+        border-bottom-right-radius: 0;
+      }
+      .assistant {
+        align-self: flex-start;
+        background: #e9ecef;
+        color: black;
+        border-bottom-left-radius: 0;
+      }
+      #input-container {
+        display: flex;
+        border-top: 1px solid #ddd;
+      }
+      #messageText {
+        flex: 1;
+        padding: 12px;
+        border: none;
+        outline: none;
+        font-size: 16px;
+      }
+      button {
+        padding: 0 20px;
+        border: none;
+        background: #0078ff;
+        color: white;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #005fcc;
+      }
+      .typing {
+        font-style: italic;
+        color: gray;
+      }
+      audio {
+        margin-top: 5px;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="chat-container">
+      <div id="role-container">
+        <label>角色:</label>
+        <select id="roleSelect" style="flex: 1">
+          {% for key, role in roles.items() %}
+          <option value="{{ key }}">
+            {{ role.name }} - {{ role.description }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div id="messages"></div>
+
+      <div id="input-container">
+        <input
+          type="text"
+          id="messageText"
+          placeholder="输入问题..."
+          autocomplete="off"
+        />
+        <button id="sendBtn">发送</button>
+      </div>
+    </div>
+
+    <script>
+      const messages = document.getElementById("messages");
+      const input = document.getElementById("messageText");
+      const sendBtn = document.getElementById("sendBtn");
+      const roleSelect = document.getElementById("roleSelect");
+      let ws, typingEl, currentAssistantMsg;
+
+      function base64ToBlob(base64, type = "wav") {
+        const bytes = atob(base64);
+        const ab = new Uint8Array(bytes.length);
+        for (let i = 0; i < bytes.length; i++) ab[i] = bytes.charCodeAt(i);
+        return new Blob([ab], { type: `audio/${type}` });
+      }
+
+      function connectWS(role) {
+        if (ws) ws.close();
+        ws = new WebSocket("{{ ws_url }}?role=" + role);
+
+        ws.onmessage = (e) => {
+          const msg = JSON.parse(e.data);
+          if (msg.type === "text") {
+            if (!currentAssistantMsg) {
+              if (typingEl) typingEl.remove();
+              currentAssistantMsg = document.createElement("div");
+              currentAssistantMsg.className = "message assistant";
+              messages.appendChild(currentAssistantMsg);
+            }
+            currentAssistantMsg.textContent += msg.data;
+            messages.scrollTop = messages.scrollHeight;
+          } else if (msg.type === "audio" && currentAssistantMsg) {
+            const audio = document.createElement("audio");
+            audio.controls = true;
+            audio.src = URL.createObjectURL(base64ToBlob(msg.data));
+            currentAssistantMsg.appendChild(audio);
+            messages.scrollTop = messages.scrollHeight;
+          } else if (msg.type === "eot") {
+            input.disabled = false;
+            sendBtn.disabled = false;
+            currentAssistantMsg = null;
+            if (typingEl) typingEl.remove();
+          }
+        };
+
+        ws.onclose = () => {
+          input.disabled = false;
+          sendBtn.disabled = false;
+          currentAssistantMsg = null;
+        };
+      }
+
+      function addMessage(text, role) {
+        const div = document.createElement("div");
+        div.className = "message " + role;
+        div.textContent = text;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+      }
+
+      function sendMessage() {
+        const text = input.value.trim();
+        if (!text) return;
+        ws.send(JSON.stringify({ type: "text", data: text }));
+        addMessage(text, "user");
+        input.value = "";
+        typingEl = document.createElement("div");
+        typingEl.className = "typing";
+        typingEl.textContent = "对方正在打字...";
+        messages.appendChild(typingEl);
+        messages.scrollTop = messages.scrollHeight;
+        input.disabled = true;
+        sendBtn.disabled = true;
+        currentAssistantMsg = null;
+      }
+
+      sendBtn.onclick = sendMessage;
+      input.addEventListener("keypress", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+
+      connectWS(roleSelect.value);
+      roleSelect.addEventListener("change", () => {
+        connectWS(roleSelect.value);
+        messages.innerHTML = "";
+      });
+    </script>
+  </body>
+</html>
