@@ -78,4 +78,4 @@ fastapi dev src/main.py
 在浏览器打开 `http://127.0.0.1:8000` 进入聊天界面
 
 ### 效果演示
-![demo.mp4](demo.mp4)
+[![demo.mp4](demo.mp4)](https://github.com/user-attachments/assets/a00a24f9-dcc8-4f03-897d-640dbe9b9b75)
