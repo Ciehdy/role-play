@@ -65,4 +65,3 @@ class AppSettings(BaseSettings):
 
 
 settings = AppSettings()
-print("Settings loaded:", settings.model_dump())
