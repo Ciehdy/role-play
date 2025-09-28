@@ -1,0 +1,9 @@
+[openai]
+base_url = "https://openai.qiniu.com/v1"
+[qiniu]
+bucket_name = "role-play"
+[asr]
+model = "turbo"
+language = "zh"
+device = "cpu"
+compute_type = "float32"

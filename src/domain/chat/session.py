@@ -5,7 +5,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel
 
-from core.config import config
+from core.settings import settings
 from domain.chat.tts import TTS
 from domain.role.models import Role
 
@@ -18,8 +18,8 @@ class Message(BaseModel):
 class ChatSession:
     def __init__(self, role: Role):
         self.client = AsyncOpenAI(
-            base_url=config.OPENAI_BASE_URL,
-            api_key=config.OPENAI_API_KEY,
+            base_url=settings.openai.base_url,
+            api_key=settings.openai.api_key,
         )
         self.role = role
         self.tts = TTS(voice_type=role.tts_voice_type, speed_ratio=role.tts_speed_ratio)
@@ -47,7 +47,6 @@ class ChatSession:
             delta = chunk.choices[0].delta.content
             if delta:
                 reply_buffer += delta
-                # 逐片段推送给前端
                 await self.send_ws(websocket, Message(type="text", data=delta))
 
         # 调用 TTS 接口生成音频

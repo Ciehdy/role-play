@@ -5,7 +5,7 @@
     <title>AI Chat</title>
     <style>
       body {
-        font-family: Arial;
+        font-family: Arial, sans-serif;
         display: flex;
         justify-content: center;
         align-items: center;
@@ -13,7 +13,7 @@
         margin: 0;
         background: #f5f5f5;
       }
-      #chat-container {
+      #chat {
         width: 600px;
         height: 80vh;
         display: flex;
@@ -23,13 +23,13 @@
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
         overflow: hidden;
       }
-      #role-container {
+      #roles {
         padding: 10px;
         border-bottom: 1px solid #ddd;
         display: flex;
         gap: 10px;
       }
-      #messages {
+      #msgs {
         flex: 1;
         padding: 16px;
         overflow-y: auto;
@@ -37,32 +37,31 @@
         flex-direction: column;
         gap: 10px;
       }
-      .message {
+      .msg {
         max-width: 75%;
         padding: 10px;
         border-radius: 10px;
         white-space: pre-wrap;
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
+        opacity: 0;
+        animation: fadeIn 0.2s forwards;
       }
       .user {
         align-self: flex-end;
         background: #0078ff;
-        color: white;
+        color: #fff;
         border-bottom-right-radius: 0;
       }
       .assistant {
         align-self: flex-start;
         background: #e9ecef;
-        color: black;
+        color: #000;
         border-bottom-left-radius: 0;
       }
-      #input-container {
+      #inputC {
         display: flex;
         border-top: 1px solid #ddd;
       }
-      #messageText {
+      #txt {
         flex: 1;
         padding: 12px;
         border: none;
@@ -72,12 +71,29 @@
       button {
         padding: 0 20px;
         border: none;
-        background: #0078ff;
-        color: white;
         cursor: pointer;
+        transition: 0.2s;
       }
-      button:hover {
+      #send {
+        background: #0078ff;
+        color: #fff;
+      }
+      #send:hover {
         background: #005fcc;
+      }
+      #send:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+      #rec {
+        background: #28a745;
+        color: #fff;
+      }
+      #rec:hover {
+        background: #1e7e34;
+      }
+      .rec {
+        background: #ff4d4d !important;
       }
       .typing {
         font-style: italic;
@@ -87,11 +103,16 @@
         margin-top: 5px;
         width: 100%;
       }
+      @keyframes fadeIn {
+        to {
+          opacity: 1;
+        }
+      }
     </style>
   </head>
   <body>
-    <div id="chat-container">
-      <div id="role-container">
+    <div id="chat">
+      <div id="roles">
         <label>角色:</label>
         <select id="roleSelect" style="flex: 1">
           {% for key, role in roles.items() %}
@@ -101,107 +122,140 @@
           {% endfor %}
         </select>
       </div>
-
-      <div id="messages"></div>
-
-      <div id="input-container">
-        <input
-          type="text"
-          id="messageText"
-          placeholder="输入问题..."
-          autocomplete="off"
-        />
-        <button id="sendBtn">发送</button>
+      <div id="msgs"></div>
+      <div id="inputC">
+        <input id="txt" placeholder="输入问题..." autocomplete="off" />
+        <button id="rec"></button>
+        <button id="send">发送</button>
       </div>
     </div>
 
     <script>
-      const messages = document.getElementById("messages");
-      const input = document.getElementById("messageText");
-      const sendBtn = document.getElementById("sendBtn");
-      const roleSelect = document.getElementById("roleSelect");
-      let ws, typingEl, currentAssistantMsg;
+      let ws,
+        currentMsg,
+        mediaRecorder,
+        chunks = [];
+      const msgs = document.getElementById("msgs"),
+        txt = document.getElementById("txt"),
+        send = document.getElementById("send"),
+        rec = document.getElementById("rec"),
+        roleSelect = document.getElementById("roleSelect");
 
-      function base64ToBlob(base64, type = "wav") {
-        const bytes = atob(base64);
-        const ab = new Uint8Array(bytes.length);
-        for (let i = 0; i < bytes.length; i++) ab[i] = bytes.charCodeAt(i);
-        return new Blob([ab], { type: `audio/${type}` });
+      function scrollBottom() {
+        msgs.scrollTop = msgs.scrollHeight;
       }
-
-      function connectWS(role) {
+      function addMsg(t, r) {
+        const d = document.createElement("div");
+        d.className = "msg " + r;
+        d.textContent = t;
+        msgs.appendChild(d);
+        scrollBottom();
+      }
+      function b64ToBlob(b) {
+        const u = atob(b),
+          a = new Uint8Array(u.length);
+        for (let i = 0; i < u.length; i++) a[i] = u.charCodeAt(i);
+        return new Blob([a], { type: "audio/webm" });
+      }
+      function connect(role) {
         if (ws) ws.close();
         ws = new WebSocket("{{ ws_url }}?role=" + role);
-
         ws.onmessage = (e) => {
-          const msg = JSON.parse(e.data);
-          if (msg.type === "text") {
-            if (!currentAssistantMsg) {
-              if (typingEl) typingEl.remove();
-              currentAssistantMsg = document.createElement("div");
-              currentAssistantMsg.className = "message assistant";
-              messages.appendChild(currentAssistantMsg);
+          let m = JSON.parse(e.data);
+          if (m.type === "text") {
+            if (!currentMsg) {
+              currentMsg = document.createElement("div");
+              currentMsg.className = "msg assistant";
+              msgs.appendChild(currentMsg);
             }
-            currentAssistantMsg.textContent += msg.data;
-            messages.scrollTop = messages.scrollHeight;
-          } else if (msg.type === "audio" && currentAssistantMsg) {
-            const audio = document.createElement("audio");
-            audio.controls = true;
-            audio.src = URL.createObjectURL(base64ToBlob(msg.data));
-            currentAssistantMsg.appendChild(audio);
-            messages.scrollTop = messages.scrollHeight;
-          } else if (msg.type === "eot") {
-            input.disabled = false;
-            sendBtn.disabled = false;
-            currentAssistantMsg = null;
-            if (typingEl) typingEl.remove();
+            currentMsg.textContent += m.data;
+            scrollBottom();
+          } else if (m.type === "audio" && currentMsg) {
+            let a = document.createElement("audio");
+            a.controls = true;
+            a.src = URL.createObjectURL(b64ToBlob(m.data));
+            currentMsg.appendChild(a);
+            scrollBottom();
+          } else if (m.type === "eot") {
+            unlock();
+            currentMsg = null;
           }
         };
-
         ws.onclose = () => {
-          input.disabled = false;
-          sendBtn.disabled = false;
-          currentAssistantMsg = null;
+          unlock();
+          currentMsg = null;
         };
       }
-
-      function addMessage(text, role) {
-        const div = document.createElement("div");
-        div.className = "message " + role;
-        div.textContent = text;
-        messages.appendChild(div);
-        messages.scrollTop = messages.scrollHeight;
+      function sendMsg(t) {
+        if (!t) return;
+        ws.send(JSON.stringify({ type: "text", data: t }));
+        addMsg(t, "user");
+        txt.value = "";
+        txt.disabled = send.disabled = rec.disabled = true;
+        currentMsg = null;
       }
-
-      function sendMessage() {
-        const text = input.value.trim();
-        if (!text) return;
-        ws.send(JSON.stringify({ type: "text", data: text }));
-        addMessage(text, "user");
-        input.value = "";
-        typingEl = document.createElement("div");
-        typingEl.className = "typing";
-        typingEl.textContent = "对方正在打字...";
-        messages.appendChild(typingEl);
-        messages.scrollTop = messages.scrollHeight;
-        input.disabled = true;
-        sendBtn.disabled = true;
-        currentAssistantMsg = null;
+      function toggleUI(r) {
+        rec.textContent = r ? "⏹" : "";
+        rec.classList.toggle("rec", r);
+        txt.disabled = r;
+        send.disabled = r;
       }
-
-      sendBtn.onclick = sendMessage;
-      input.addEventListener("keypress", (e) => {
+      function unlock() {
+        toggleUI(false);
+        rec.disabled = false;
+      }
+      send.onclick = () => sendMsg(txt.value.trim());
+      txt.addEventListener("keypress", (e) => {
         if (e.key === "Enter") {
           e.preventDefault();
-          sendMessage();
+          sendMsg(txt.value.trim());
         }
       });
-
-      connectWS(roleSelect.value);
       roleSelect.addEventListener("change", () => {
-        connectWS(roleSelect.value);
-        messages.innerHTML = "";
+        connect(roleSelect.value);
+        msgs.innerHTML = "";
       });
+      connect(roleSelect.value);
+
+      rec.onclick = async () => {
+        if (mediaRecorder?.state === "recording") {
+          mediaRecorder.stop();
+          return;
+        }
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+          });
+          mediaRecorder = new MediaRecorder(stream);
+          chunks = [];
+          mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunks.push(e.data);
+          };
+          mediaRecorder.onstop = async () => {
+            const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
+            const fd = new FormData();
+            fd.append("file", blob, "audio.webm");
+            const asr = document.createElement("div");
+            asr.className = "msg assistant typing";
+            asr.textContent = "语音识别中...";
+            msgs.appendChild(asr);
+            scrollBottom();
+            try {
+              const res = await fetch("/asr", { method: "POST", body: fd });
+              const r = await res.json();
+              asr.remove();
+              sendMsg(r.text || "[识别失败]");
+            } catch (e) {
+              asr.textContent = "[识别失败]";
+              unlock();
+            }
+          };
+          mediaRecorder.start();
+          toggleUI(true);
+        } catch (e) {
+          alert("无法开始录音:" + e.message);
+        }
+      };
     </script>
   </body>
 </html>
